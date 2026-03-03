@@ -136,6 +136,12 @@ async fn event_loop(
                                 KeyCode::Char('3') | KeyCode::Char('x') => {
                                     app.set_sort_mode(SortMode::RxDesc);
                                 }
+                                KeyCode::Right | KeyCode::Tab => {
+                                    app.next_sort();
+                                }
+                                KeyCode::Left | KeyCode::BackTab => {
+                                    app.prev_sort();
+                                }
                                 KeyCode::Char('r') => {
                                     app.loading = true;
                                     terminal.draw(|frame| ui::draw(frame, app))?;

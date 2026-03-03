@@ -183,6 +183,22 @@ impl App {
         self.sort_nodes();
     }
 
+    pub fn next_sort(&mut self) {
+        self.set_sort_mode(match self.sort_mode {
+            SortMode::Name => SortMode::TxDesc,
+            SortMode::TxDesc => SortMode::RxDesc,
+            SortMode::RxDesc => SortMode::Name,
+        });
+    }
+
+    pub fn prev_sort(&mut self) {
+        self.set_sort_mode(match self.sort_mode {
+            SortMode::Name => SortMode::RxDesc,
+            SortMode::TxDesc => SortMode::Name,
+            SortMode::RxDesc => SortMode::TxDesc,
+        });
+    }
+
     fn sort_nodes(&mut self) {
         match self.sort_mode {
             SortMode::Name => {
