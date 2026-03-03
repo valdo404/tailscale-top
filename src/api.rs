@@ -114,14 +114,14 @@ impl TailscaleClient {
     /// Fetch Prometheus metrics from a node's metrics endpoint.
     /// Requires `tailscale set --webclient` on the target node and ACL for port 5252.
     /// Returns parsed tx/rx totals from Prometheus counters, or None if unreachable.
-    pub async fn fetch_node_metrics(&self, ip: &str) -> Option<PeerTraffic> {
-        let metrics_client = Client::builder()
+    pub async fn fetch_node_metrics(ip: String) -> Option<PeerTraffic> {
+        let client = Client::builder()
             .timeout(Duration::from_secs(2))
             .build()
             .ok()?;
 
         let url = format!("http://{ip}:5252/metrics");
-        let body = metrics_client.get(&url).send().await.ok()?.text().await.ok()?;
+        let body = client.get(&url).send().await.ok()?.text().await.ok()?;
         Some(parse_prometheus_metrics(&body))
     }
 }

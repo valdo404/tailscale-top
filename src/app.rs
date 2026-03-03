@@ -1,5 +1,6 @@
 use crate::api::{self, Device, TailscaleClient};
 use std::collections::HashMap;
+use tokio::task::JoinHandle;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SortMode {
@@ -22,6 +23,9 @@ pub struct NodeInfo {
 #[derive(Debug, Clone)]
 pub struct LogEntry {
     pub timestamp: String,
+    pub event_type: String,
+    pub node_name: String,
+    pub node_ip: String,
     pub message: String,
 }
 
@@ -60,12 +64,14 @@ impl App {
         chrono::Local::now().format("%H:%M:%S").to_string()
     }
 
-    fn add_log(&mut self, message: String) {
+    fn add_log(&mut self, event_type: &str, node_name: &str, node_ip: &str, message: String) {
         self.log_entries.push(LogEntry {
             timestamp: Self::now_str(),
+            event_type: event_type.to_string(),
+            node_name: node_name.to_string(),
+            node_ip: node_ip.to_string(),
             message,
         });
-        // Keep last 500 entries
         if self.log_entries.len() > 500 {
             self.log_entries.drain(..self.log_entries.len() - 500);
         }
@@ -79,7 +85,7 @@ impl App {
             }
             Err(e) => {
                 let msg = format!("API error: {e}");
-                self.add_log(msg.clone());
+                self.add_log("error", "", "", msg.clone());
                 self.error = Some(msg);
             }
         }
@@ -119,21 +125,19 @@ impl App {
             })
             .collect();
 
-        // Try to fetch remote metrics from online nodes (port 5252)
-        let futures: Vec<_> = nodes
+        // Fetch remote metrics from online nodes in parallel (port 5252)
+        let handles: Vec<(usize, JoinHandle<_>)> = nodes
             .iter()
             .enumerate()
             .filter(|(_, n)| n.online)
             .map(|(i, n)| {
                 let ip = n.ip.clone();
-                let client = &self.client;
-                async move { (i, client.fetch_node_metrics(&ip).await) }
+                (i, tokio::spawn(TailscaleClient::fetch_node_metrics(ip)))
             })
             .collect();
 
-        let results = futures::future::join_all(futures).await;
-        for (i, metrics) in results {
-            if let Some(traffic) = metrics {
+        for (i, handle) in handles {
+            if let Some(traffic) = handle.await.ok().flatten() {
                 nodes[i].has_webclient = true;
                 if traffic.tx_bytes > 0 || traffic.rx_bytes > 0 {
                     nodes[i].tx_bytes = Some(traffic.tx_bytes);
@@ -147,22 +151,16 @@ impl App {
             let was_online = self.previous_online.get(&node.ip).copied();
             match (was_online, node.online) {
                 (Some(false), true) => {
-                    self.add_log(format!("CONNECT    {} ({}) came online", node.name, node.ip));
+                    self.add_log("connect", &node.name, &node.ip, "came online".into());
                 }
                 (Some(true), false) => {
-                    self.add_log(format!(
-                        "DISCONNECT {} ({}) went offline",
-                        node.name, node.ip
-                    ));
+                    self.add_log("disconnect", &node.name, &node.ip, "went offline".into());
                 }
                 (None, true) => {
-                    self.add_log(format!("DISCOVERED {} ({}) — online", node.name, node.ip));
+                    self.add_log("discovered", &node.name, &node.ip, "online".into());
                 }
                 (None, false) => {
-                    self.add_log(format!(
-                        "DISCOVERED {} ({}) — offline",
-                        node.name, node.ip
-                    ));
+                    self.add_log("discovered", &node.name, &node.ip, "offline".into());
                 }
                 _ => {}
             }
